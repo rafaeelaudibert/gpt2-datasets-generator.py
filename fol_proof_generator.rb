@@ -7,7 +7,7 @@ require 'set'
 
 # Constants
 FILES = (1..15).map { |idx| "http://us.metamath.org/mpeuni/mmtheorems#{idx}.html" }
-PROOFS_FOLDER = './proofs'
+PROOFS_FOLDER = './fol_proofs'
 INITIAL = 'a'.ord
 FINAL = 'z'.ord + 1
 
@@ -106,7 +106,7 @@ proofs = proofs.map do |proof|
      }
      regex = Regexp.new(hashmap.keys.join('|'))
 
-     '(' + proof.gsub(variables) { |_variable| rand(INITIAL...FINAL).chr }
+     '(' + proof.gsub(variables) { |_| rand(INITIAL...FINAL).chr }
                 .gsub(regex) { |variable| hashmap[variable.to_sym] } + ').'
    end]
 end.flatten
