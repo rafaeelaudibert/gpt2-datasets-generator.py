@@ -8,19 +8,23 @@ require 'set'
 # Constants
 FILES = (1..15).map { |idx| "http://us.metamath.org/mpeuni/mmtheorems#{idx}.html" }
 PROOFS_FOLDER = './fol_proofs'
+EXECUTABLE = './fol_prover.run'
+TIMEOUT_TIME = 5
 INITIAL = 'a'.ord
 FINAL = 'z'.ord + 1
 
 proofs = FILES.map do |file|
-  puts "Processing file #{file}"
-  Nokogiri::HTML(open(file)).css('tr td')
-          .select { |td| td['colspan'].to_i == 3 }
-          .map { |td| td.text.gsub(/[[:space:]]/, '') }
-          .select do |td|
-    td != '' && td.include?('⊢') &&
-      !/[A-Z]|[[0-9]+\.[0-9]+\.[0-9]+]/.match?(td) && !/^.*(add|⊼|⊻|⊤).*$/.match?(td)
+  Thread.new do
+    puts "Processing file #{file}"
+    Nokogiri::HTML(open(file)).css('tr td')
+            .select { |td| td['colspan'].to_i == 3 }
+            .map { |td| td.text.gsub(/[[:space:]]/, '') }
+            .select do |td|
+      td != '' && td.include?('⊢') &&
+        !/[A-Z]|[[0-9]+\.[0-9]+\.[0-9]+]/.match?(td) && !/^.*(add|⊼|⊻|⊤).*$/.match?(td)
+    end
   end
-end.flatten
+end.map(&:value).flatten
 puts "Parsed #{proofs.length} proofs"
 
 # We create 4 differentes types os formulas:
@@ -50,7 +54,7 @@ proofs = proofs.map do |proof|
       '⊥': 'F',
       '→': ' => ',
       '↔': ' <=> ',
-      '&': ' & ',
+      '&': ', ',
       '∧': ' & ',
       '∨': ' + ',
       '⇒': ') => ('
@@ -82,7 +86,7 @@ proofs = proofs.map do |proof|
        '⊥': 'F',
        '→': ' => ',
        '↔': ' <=> ',
-       '&': ' & ',
+       '&': ', ',
        '∧': ' & ',
        '∨': ' + ',
        '⇒': ') => ('
@@ -99,7 +103,7 @@ proofs = proofs.map do |proof|
        '⊥': 'F',
        '→': ' => ',
        '↔': ' <=> ',
-       '&': ' & ',
+       '&': ', ',
        '∧': ' & ',
        '∨': ' + ',
        '⇒': ') => ('
@@ -115,9 +119,16 @@ puts "Generated #{proofs.length} proofs"
 
 puts 'Start proving'
 threads = proofs.each_with_index.map do |proof, index|
-  Thread.new(proof, "#{PROOFS_FOLDER}/#{index}") do |pr, file_name|
-    system "echo '#{pr}' > #{file_name}.proof" # Write formula to file
-    system "timeout 5 ./base_prover -p '#{file_name}.proof' >> #{file_name}.proof" # Get the proof
+  Thread.new do
+    file_name = "#{PROOFS_FOLDER}/#{index}"
+
+    system "echo '#{proof.gsub(', ', ' & ')}' > #{file_name}.tmp" # Write parsed formula to a temp file
+
+    # Write the formula to file and get the proof
+    system "echo '#{proof}' > #{file_name}.proof"
+    system "timeout #{TIMEOUT_TIME} #{EXECUTABLE} -p '#{file_name}.tmp' >> #{file_name}.proof"
+
+    system "rm '#{file_name}.tmp'" # Remove the temporary file
   end
 end
 
