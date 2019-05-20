@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 require 'matrix'
+require 'rubystats'
+require 'fileutils'
 
 # Monkey patching to the Rational class
 class Rational
@@ -18,6 +20,9 @@ ORDINALS = {
   '3': 'rd'
 }.freeze
 VARIABLES = %w[x y z w k].freeze
+OUTPUT_FOLDER = 'systems'
+ITERATIONS = 250_000
+SEPARATOR_SIZE = 15
 
 # Prints a new line
 def print_new_line
@@ -25,9 +30,9 @@ def print_new_line
 end
 
 # Creates a separator
-def print_separator(separator = '-')
+def print_separator(separator = '-', separator_size = SEPARATOR_SIZE)
   print_new_line
-  puts separator * 25
+  puts separator * separator_size
   print_new_line
 end
 
@@ -50,14 +55,14 @@ def gaussian_elimination(matrix)
     max_idx = pivot_idx
     pivot_idx.upto(matrix.length - 1) do |row|
       rel_val = matrix[row][pivot_idx] / matrix[row].map(&:abs).max
-      if rel_val >= max_rel_val
+      if rel_val > max_rel_val
         max_rel_val = rel_val
         max_idx = row
       end
     end
 
     if pivot_idx != max_idx
-      puts "Change the #{format_ordinal pivot_idx + 1} row with the #{format_ordinal max_idx + 1}"
+      puts "Change #{format_ordinal pivot_idx + 1} row with #{format_ordinal max_idx + 1}"
 
       # Swap the best pivot row into place.
       matrix[pivot_idx], matrix[max_idx] = matrix[max_idx], matrix[pivot_idx]
@@ -73,14 +78,15 @@ def gaussian_elimination(matrix)
     (pivot_idx + 1).upto(matrix.length - 1) do |row|
       # Find factor so that [this row] = [this row] - factor*[pivot row]
       # leaves 0 in the pivot column.
-      factor = matrix[row][pivot_idx] / pivot
+      factor = pivot != 0 ? matrix[row][pivot_idx] / pivot : 0
 
       next unless factor != 0
 
       puts "We cancel the #{format_ordinal pivot_idx + 1} coefficient in the #{row + 1} row" \
-          " with R#{row + 1} <- R#{row + 1} #{factor >= 0 ? '-' : '+'} (#{factor})R#{pivot_idx + 1}"
+          " with R#{row + 1} <- R#{row + 1} - (#{factor})R#{pivot_idx + 1}"
       # We know it will be zero.
       matrix[row][pivot_idx] = 0r
+      
       # Compute [this row] = [this row] - factor*[pivot row] for the other cols.
       (pivot_idx + 1).upto(matrix[row].length - 1) do |col|
         matrix[row][col] -= factor * matrix[pivot_idx][col]
@@ -107,18 +113,21 @@ def back_substitution(matrix)
     pp matrix
     print_separator
 
-    puts 'Now we iterate over the rows above the current pivot index, "zeroing" them'
+    next if (pivot_idx - 1).negative?
+
+    puts 'We iterate over the rows above the current pivot index, to zero them'
+    print_new_line
     (pivot_idx - 1).downto(0) do |row|
       if !matrix[row][pivot_idx].zero?
         puts "Cancel R#{row + 1} #{format_ordinal row + 1} coefficient with: " \
-             "R#{row + 1} <- R#{row + 1} #{matrix[row][pivot_idx] >= 0 ? '-' : '+'} " \
-             "#{matrix[row][pivot_idx]} * R#{pivot_idx + 1}"
+            "R#{row + 1} <- R#{row + 1} #{matrix[row][pivot_idx] >= 0 ? '-' : '+'} " \
+            "#{matrix[row][pivot_idx]} * R#{pivot_idx + 1}"
 
         matrix[row][-1] -= matrix[row][pivot_idx] * matrix[pivot_idx].last
         matrix[row][pivot_idx] = 0r # We know it will be 0
       else
         puts "The #{format_ordinal row + 1} coefficient in R#{row + 1} is already zeroed," \
-             'so we follow along'
+            'so we follow along'
       end
 
       pp matrix
@@ -144,27 +153,47 @@ end
 
 # Print the result.
 def print_result(matrix)
-  puts 'With the matrix reduced to their reduced row echelon form, we have it as:'
-  pp matrix
-  print_new_line
-
-  puts 'So the result for the variables are'
-  pp matrix.map(&:last)
+  puts 'With the matrix reduced to their reduced row echelon form, we have that the result' \
+       'for the variables are:'
+  puts(matrix.map(&:last)
+             .each_with_index
+             .map { |variable, idx| "#{VARIABLES[idx]} = #{variable}" }
+             .reduce { |acc, new| "#{acc}, #{new}" })
 end
 
+# Generates a random matrix
 def generate_matrix
-  matrix = []
-  vector = []
+  generator = Rubystats::NormalDistribution.new(0, 3)
+  numbers = 20.times.map do
+    numerator = generator.rng.to_i
+    # denominator = generator.rng.to_i
+    # denominator = denominator.zero? ? 1 : denominator
+
+    Rational(numerator)
+  end.to_a
+
+  matrix =
+    [
+      numbers[0..3],
+      numbers[4..7],
+      numbers[8..11],
+      numbers[12..15]
+    ]
+  answer = numbers[16..19]
+  vector = solve_equation(matrix, answer)
 
   [matrix, vector]
 end
 
-def print_equation(matrix, vector)
-  matrix.each_with_index do |row, row_idx|
-    row.each_with_index do |value, col_idx|
-      print "#{value.abs}#{VARIABLES[col_idx]}#{row.length != col_idx + 1 ? (row[col_idx + 1] > 0 ? ' + ' : ' - ') : ''}"
+# Solves an equation
+def solve_equation(matrix, coefficients)
+  matrix.map do |row|
+    sum = 0
+    row.each_with_index do |value, idx|
+      sum += value * coefficients[idx]
     end
-    puts " = #{vector[row_idx]}"
+
+    sum
   end
 end
 
@@ -190,12 +219,13 @@ def iterate(matrix, vector)
   pp matrix
 
   # Performs Gaussian elemination to put the system in row echelon form.
+  print_separator
   puts 'We reduce our matrix to their row echelon form:'
   print_new_line
   gaussian_elimination(matrix)
 
   # Performs Back-substitution to solve the system.
-  puts 'Now, we reduce to their reduced row echelon form:'
+  puts 'Then, we reduce to their reduced row echelon form:'
   print_new_line
   back_substitution(matrix)
 
@@ -203,13 +233,40 @@ def iterate(matrix, vector)
   print_result(matrix)
 end
 
-matrix =
-  [
-    [1r, 1r, -1/3r, 1r],
-    [2r, 2r, 1r, 2r],
-    [1r, 2r, 4r, 8r],
-    [0r, 1r, 4r, 12r]
-  ]
-vector = [1r, 1r, 2r, 0r]
+# Returns the signnumber
+def signal(number)
+  number.negative? ? ' - ' : ' + '
+end
 
-iterate matrix, vector
+# Prints an equation based on its matrix and vector
+def print_equation(matrix, vector)
+  matrix.each_with_index do |row, row_idx|
+    print row[0].negative? ? '-' : ' '
+    row.each_with_index do |value, col_idx|
+      print "#{value.abs}#{VARIABLES[col_idx]}" \
+            "\t#{col_idx + 1 < row.length ? signal(row[col_idx + 1]) : ''}"
+    end
+    puts " = #{vector[row_idx]}"
+  end
+end
+
+# Create the folder
+FileUtils.mkdir OUTPUT_FOLDER unless File.directory? OUTPUT_FOLDER
+
+# Generate the systems
+missed = 0
+ITERATIONS.times do |index|
+  warn "Starting #{index}"
+  filename = "./#{OUTPUT_FOLDER}/#{index}.txt"
+  $stdout.reopen(filename, 'w')
+
+  begin
+    iterate(*generate_matrix)
+  rescue ZeroDivisionError
+    missed += 1
+    warn "Error at index #{index}... Skipping and deleting file..."
+    File.delete(filename) if File.exist?(filename)
+  end
+end
+
+warn "Completed #{ITERATIONS - missed}/#{ITERATIONS} -> #{(ITERATIONS - missed).to_f / ITERATIONS}%"
