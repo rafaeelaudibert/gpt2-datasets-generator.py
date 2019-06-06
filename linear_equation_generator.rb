@@ -4,14 +4,6 @@ require 'matrix'
 require 'rubystats'
 require 'fileutils'
 
-# Monkey patching to the Rational class
-class Rational
-  alias to_s_old to_s
-  def to_s
-    denominator == 1 ? numerator.to_s : to_s_old
-  end
-end
-
 # Constants
 EPSILON = 1e-10
 ORDINALS = {
@@ -21,7 +13,7 @@ ORDINALS = {
 }.freeze
 VARIABLES = %w[x y z w k].freeze
 OUTPUT_FOLDER = 'systems'
-ITERATIONS = 250_000
+ITERATIONS = !ARGV.empty? ? ARGV[0].to_i : 250_000
 SEPARATOR_SIZE = 15
 
 # Prints a new line
@@ -39,6 +31,18 @@ end
 # Receives a number and prints it with an ordinal termination
 def format_ordinal(number)
   number.to_s + ORDINALS.fetch(number.to_s[-1].to_sym, 'th')
+end
+
+# Pretty-print the matrix in a custom format
+def pp_matrix(matrix)
+  matrix.each { |x| puts x.map { |y| y.inspect[1...-1].split('').join(' ') + ' , ' }.join[0...-3] }
+  print_new_line
+end
+
+# Pretty-print the vector in a custom format
+def pp_vector(vector)
+  puts vector.map { |y| y.inspect[1...-1].split('').join(' ') + ' , ' }.join[0...-3]
+  print_new_line
 end
 
 # Performs an in-place Gaussian elimination on an NxN matrix 'matrix' (2D array
@@ -70,7 +74,7 @@ def gaussian_elimination(matrix)
       puts "We don't need to change any row, as the current row has the best pivot"
     end
 
-    pp matrix
+    pp_matrix matrix
     print_new_line
 
     pivot = matrix[pivot_idx][pivot_idx]
@@ -82,20 +86,22 @@ def gaussian_elimination(matrix)
 
       next unless factor != 0
 
-      puts "We cancel the #{format_ordinal pivot_idx + 1} coefficient in the #{row + 1} row" \
-          " with R#{row + 1} <- R#{row + 1} - (#{factor})R#{pivot_idx + 1}"
+      puts "Cancel the #{format_ordinal pivot_idx + 1} coefficient in #{format_ordinal row + 1}" \
+          " row: R#{row + 1} <- R#{row + 1} #{factor >= 0 ? '-' : '+'} " \
+          "( #{factor.abs.to_s.split('').join(' ')} ) * R#{pivot_idx + 1}"
+
       # We know it will be zero.
       matrix[row][pivot_idx] = 0r
-      
-      # Compute [this row] = [this row] - factor*[pivot row] for the other cols.
+
+      # Compute [this row] = [this row] - factor * [pivot row] for the other cols.
       (pivot_idx + 1).upto(matrix[row].length - 1) do |col|
         matrix[row][col] -= factor * matrix[pivot_idx][col]
       end
-
-      pp matrix
-      print_new_line
     end
 
+    print_new_line
+    puts 'After it, this is the new matrix:'
+    pp_matrix matrix
     print_separator
   end
 
@@ -109,55 +115,65 @@ def back_substitution(matrix)
     inverse = 1 / matrix[pivot_idx][pivot_idx]
     matrix[pivot_idx][-1] *= inverse
     matrix[pivot_idx][pivot_idx] = 1r # We know it will be 1
-    puts "Multiply the #{format_ordinal pivot_idx + 1} row by its diagonal inverse (#{inverse})"
-    pp matrix
-    print_separator
+    puts "Multiply the #{format_ordinal pivot_idx + 1} row by its diagonal inverse: "\
+         "#{inverse.to_s.split('').join(' ')}"
 
-    next if (pivot_idx - 1).negative?
-
-    puts 'We iterate over the rows above the current pivot index, to zero them'
-    print_new_line
-    (pivot_idx - 1).downto(0) do |row|
-      if !matrix[row][pivot_idx].zero?
-        puts "Cancel R#{row + 1} #{format_ordinal row + 1} coefficient with: " \
-            "R#{row + 1} <- R#{row + 1} #{matrix[row][pivot_idx] >= 0 ? '-' : '+'} " \
-            "#{matrix[row][pivot_idx]} * R#{pivot_idx + 1}"
-
-        matrix[row][-1] -= matrix[row][pivot_idx] * matrix[pivot_idx].last
-        matrix[row][pivot_idx] = 0r # We know it will be 0
-      else
-        puts "The #{format_ordinal row + 1} coefficient in R#{row + 1} is already zeroed," \
-            'so we follow along'
-      end
-
-      pp matrix
+    if (pivot_idx - 1).negative?
+      puts 'And we don\'t have to zero any row'
+    else
+      puts 'We iterate over the rows above the current pivot index, to zero them'
       print_new_line
+      (pivot_idx - 1).downto(0) do |row|
+        if !matrix[row][pivot_idx].zero?
+          puts "Cancel R#{row + 1} #{format_ordinal row + 1} coefficient: " \
+              "R#{row + 1} <- R#{row + 1} #{matrix[row][pivot_idx] >= 0 ? '-' : '+'} " \
+              "( #{matrix[row][pivot_idx].abs.to_s.split('').join(' ')} ) * R#{pivot_idx + 1}"
+
+          matrix[row][-1] -= matrix[row][pivot_idx] * matrix[pivot_idx].last
+          matrix[row][pivot_idx] = 0r # We know it will be 0
+        else
+          puts "The #{format_ordinal row + 1} coefficient in R#{row + 1} is already zeroed, " \
+              'so we follow along'
+        end
+      end
     end
+
+    print_new_line
+    puts 'After it, this is the matrix'
+    pp_matrix matrix
+    print_separator
   end
+
+  puts 'And in the reduced row echelon form we have:'
+  pp_matrix matrix
+  print_separator
+
+  matrix
 end
 
 # Calculate the determinant, and if it is zero, return true
 def determinant_zero(matrix)
   puts 'We calculate the matrix determinant to see if it is singular or not'
-  determinant = Matrix[*matrix].determinant
+  det = Matrix[*matrix].determinant
 
-  if determinant.zero?
+  if det.zero?
     puts 'As the determinant is zero, this matrix is singular, so it has infinite solutions'
   else
-    puts "As the determinant is #{determinant}, the matrix is NOT singular, so we can procceed"
+    puts "As the determinant is #{det.denominator == 1 ? det.numerator.to_s.split('').join(' ') : det}" \
+         ', the matrix is NOT singular, so we can procceed'
   end
   print_separator
 
-  determinant.zero?
+  det.zero?
 end
 
 # Print the result.
 def print_result(matrix)
   puts 'With the matrix reduced to their reduced row echelon form, we have that the result' \
-       'for the variables are:'
+       ' for the variables are:'
   puts(matrix.map(&:last)
              .each_with_index
-             .map { |variable, idx| "#{VARIABLES[idx]} = #{variable}" }
+             .map { |variable, idx| "#{VARIABLES[idx]} = #{variable.to_s.split('').join(' ')}" }
              .reduce { |acc, new| "#{acc}, #{new}" })
 end
 
@@ -206,8 +222,8 @@ def iterate(matrix, vector)
 
   # Print the matrix and the vector used to solve it
   puts 'First we write a matrix with the equation coefficients, and a vector with the solutions:'
-  pp matrix
-  pp vector
+  pp_matrix matrix
+  pp_vector vector
   print_separator
 
   # Calculate the determinant, and if it is zero, stop the linear_equation solver
@@ -216,7 +232,7 @@ def iterate(matrix, vector)
   # Add the vector as the last column-vector of the matrix
   puts 'We will use our vector soluction, as the last column-vector of the matrix'
   vector.each_with_index { |val, idx| matrix[idx] << val }
-  pp matrix
+  pp_matrix matrix
 
   # Performs Gaussian elemination to put the system in row echelon form.
   print_separator
@@ -241,12 +257,12 @@ end
 # Prints an equation based on its matrix and vector
 def print_equation(matrix, vector)
   matrix.each_with_index do |row, row_idx|
-    print row[0].negative? ? '-' : ' '
+    print row[0].negative? ? '- ' : '  '
     row.each_with_index do |value, col_idx|
-      print "#{value.abs}#{VARIABLES[col_idx]}" \
+      print "#{value.abs.to_s.split('').join(' ')} #{VARIABLES[col_idx]}" \
             "\t#{col_idx + 1 < row.length ? signal(row[col_idx + 1]) : ''}"
     end
-    puts " = #{vector[row_idx]}"
+    puts " = #{vector[row_idx].to_s.split('').join(' ')}"
   end
 end
 
