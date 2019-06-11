@@ -3,6 +3,15 @@
 require 'matrix'
 require 'rubystats'
 require 'fileutils'
+require 'optparse'
+
+# Arg Parsing
+options = {}
+OptionParser.new do |opt|
+  opt.on('-i', '--iterations ITERATIONS') { |o| options[:iterations] = o.to_i }
+  opt.on('-d', '--matrix_dimension DIMENSION') { |o| options[:dimension] = o.to_i }
+  opt.on('-f', '--folder FOLDER') { |o| options[:folder] = o.to_s }
+end.parse!
 
 # Constants
 EPSILON = 1e-10
@@ -12,9 +21,10 @@ ORDINALS = {
   '3': 'rd'
 }.freeze
 VARIABLES = %w[x y z w k].freeze
-OUTPUT_FOLDER = 'systems'
-ITERATIONS = !ARGV.empty? ? ARGV[0].to_i : 250_000
 SEPARATOR_SIZE = 15
+OUTPUT_FOLDER = options[:folder] || 'output_folder'
+ITERATIONS = options[:iterations] || 250_000
+MATRIX_DIMENSION = options[:dimension] || 4
 
 # Prints a new line
 def print_new_line
@@ -180,22 +190,15 @@ end
 # Generates a random matrix
 def generate_matrix
   generator = Rubystats::NormalDistribution.new(0, 3)
-  numbers = 20.times.map do
-    numerator = generator.rng.to_i
-    # denominator = generator.rng.to_i
-    # denominator = denominator.zero? ? 1 : denominator
+  numbers = (MATRIX_DIMENSION * (MATRIX_DIMENSION + 1))
+            .times
+            .map { Rational(generator.rng.to_i) }
+            .each_slice(MATRIX_DIMENSION)
+            .to_a
 
-    Rational(numerator)
-  end.to_a
+  matrix = numbers[0...-1]
+  answer = numbers[-1]
 
-  matrix =
-    [
-      numbers[0..3],
-      numbers[4..7],
-      numbers[8..11],
-      numbers[12..15]
-    ]
-  answer = numbers[16..19]
   vector = solve_equation(matrix, answer)
 
   [matrix, vector]
