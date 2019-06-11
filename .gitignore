@@ -2,7 +2,3 @@ fol_proofs/*
 systems*/*
 .vscode/
 /**/__pycache__/
-
-# Allow .gitkeep in ./fol_proofs folder
-!fol_proofs/.gitkeep
-!systems/.gitkeep
