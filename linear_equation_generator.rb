@@ -20,7 +20,7 @@ ORDINALS = {
   '2': 'nd',
   '3': 'rd'
 }.freeze
-VARIABLES = %w[x y z w k].freeze
+VARIABLES = %w[x y z w k a b c d e f g h i j k l].freeze
 SEPARATOR_SIZE = 15
 OUTPUT_FOLDER = options[:folder] || 'output_folder'
 ITERATIONS = options[:iterations] || 250_000
